@@ -36,7 +36,6 @@ using OpenTelemetry.Trace;
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 
-
 var serviceName = "Observability.Tracing";
 
 builder.Services.AddOpenTelemetry().WithTracing(tcb =>
@@ -46,15 +45,9 @@ builder.Services.AddOpenTelemetry().WithTracing(tcb =>
         .SetResourceBuilder(
             ResourceBuilder.CreateDefault()
                 .AddService(serviceName: serviceName))
-        .AddSource("TTT")
-        .SetSampler(new AlwaysOnSampler())
-        // .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(0.5)))
+        .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(0.5)))
         .AddAspNetCoreInstrumentation()
-        .AddJaegerExporter(o =>
-        {
-            o.AgentHost = "localhost"; // or your Jaeger host
-            o.AgentPort = 6831; // Default Jaeger port
-        });
+        .AddJaegerExporter();
 });
 
 builder.Services.AddEndpointsApiExplorer();

@@ -1,4 +1,5 @@
-﻿using OpenTelemetry;
+﻿using System.Net.Http.Json;
+using OpenTelemetry;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
@@ -6,7 +7,7 @@ var serviceName = "Observability.Tracing.Client";
 
 using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .AddSource(serviceName)
-    //.AddHttpClientInstrumentation()
+    .AddHttpClientInstrumentation()
     .SetResourceBuilder(
         ResourceBuilder.CreateDefault()
             .AddService(serviceName: serviceName))
@@ -15,6 +16,15 @@ using var tracerProvider = Sdk.CreateTracerProviderBuilder()
 
 using var httpClient = new HttpClient();
 
-var response = await httpClient.GetAsync("https://localhost:7205");
+var getResponse = await httpClient.GetAsync("https://localhost:7205");
+getResponse.EnsureSuccessStatusCode();
+
+var order = new
+{
+    Client = new { Id = "12345" },
+    Product = new { Type = 1 }
+};
+
+var response = await httpClient.PostAsJsonAsync("https://localhost:7205/order", order);
+
 response.EnsureSuccessStatusCode();
-Console.WriteLine("Response received successfully.");
