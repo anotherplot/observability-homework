@@ -30,18 +30,48 @@ using Microsoft.AspNetCore.Mvc;
 using Observability.Homework;
 using Observability.Homework.Models;
 using Observability.Homework.Services;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
 
-builder.Services.AddSingleton<IPizzaBakeryService, PizzaBakeryService>();
+
+var serviceName = "Observability.Tracing";
+
+builder.Services.AddOpenTelemetry().WithTracing(tcb =>
+{
+    tcb
+        .AddSource(serviceName)
+        .SetResourceBuilder(
+            ResourceBuilder.CreateDefault()
+                .AddService(serviceName: serviceName))
+        .AddSource("TTT")
+        .SetSampler(new AlwaysOnSampler())
+        // .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(0.5)))
+        .AddAspNetCoreInstrumentation()
+        .AddJaegerExporter(o =>
+        {
+            o.AgentHost = "localhost"; // or your Jaeger host
+            o.AgentPort = 6831; // Default Jaeger port
+        });
+});
+
+builder.Services.AddEndpointsApiExplorer();
+
+builder.Services.AddSingleton(TracerProvider.Default.GetTracer(serviceName));
+
+builder.Services.AddTransient<IPizzaBakeryService, PizzaBakeryService>();
 builder.Services.AddOurCustomLogging(builder.Logging, builder.Environment);
 
 var app = builder.Build();
 
 app.MapPost("/order",
     async ([FromBody] Order order, IPizzaBakeryService pizzaBakeryService, [FromServices] ILogger<Program> logger,
+        [FromServices] Tracer tracer,
         CancellationToken cancellationToken) =>
     {
+        using var span = tracer.StartActiveSpan("Some method with tracing");
         var clientId = order.Client.Id;
         using (logger.BeginScope(new Dictionary<string, object>
                {
@@ -55,4 +85,7 @@ app.MapPost("/order",
             return Results.Ok(order.Product);
         }
     });
+
+app.MapGet("/", (IPizzaBakeryService pizzaBakeryService) =>
+    pizzaBakeryService.SomeMethodWithTracing());
 app.Run();

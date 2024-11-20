@@ -1,21 +1,25 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Observability.Homework.Exceptions;
 using Observability.Homework.Models;
+using OpenTelemetry.Trace;
 
 namespace Observability.Homework.Services;
 
 public interface IPizzaBakeryService
 {
     Task<Product> DoPizza(Product product, CancellationToken cancellationToken = default);
+    void SomeMethodWithTracing();
 }
 
-public class PizzaBakeryService(ILogger<PizzaBakeryService> logger) : IPizzaBakeryService
+public class PizzaBakeryService(Tracer tracer, ILogger<PizzaBakeryService> logger) : IPizzaBakeryService
 {
     private readonly ConcurrentDictionary<Guid, Product> _bake = new();
 
     public async Task<Product> DoPizza(Product product, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Start preparing pizza");
+        using var span = tracer.StartActiveSpan("DoPizza");
         try
         {
             await MakePizza(product, cancellationToken);
@@ -23,21 +27,33 @@ public class PizzaBakeryService(ILogger<PizzaBakeryService> logger) : IPizzaBake
             await PackPizza(product, cancellationToken);
             return product;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
+            span.SetStatus(Status.Error.WithDescription(ex.Message));
+            span.RecordException(ex);
             DropPizza(product);
             throw;
         }
-        catch (BurntPizzaException)
+        catch (BurntPizzaException ex)
         {
+            span.SetStatus(Status.Error.WithDescription(ex.Message));
+            span.RecordException(ex);
             logger.LogWarning("Burnt pizza");
             return await DoPizza(product, cancellationToken);
         }
     }
 
+    public void SomeMethodWithTracing()
+    {
+        using var span = tracer.StartActiveSpan("Some method with tracing");
+        Console.WriteLine("TEST request");
+
+    }
+
     private async Task<Product> BakePizza(Product product, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Bake pizza");
+        using var span = tracer.StartActiveSpan("BakePizza");
         PushToBake(product);
         var bakeForSeconds = new Random().Next(3, 9);
         await Task.Delay(TimeSpan.FromSeconds(bakeForSeconds), cancellationToken);
@@ -46,12 +62,14 @@ public class PizzaBakeryService(ILogger<PizzaBakeryService> logger) : IPizzaBake
             DropPizza(product);
             throw new BurntPizzaException("The pizza is burnt");
         }
+
         return PopFromBake(product);
     }
 
     private async Task<Product> MakePizza(Product product, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Make pizza");
+        using var span = tracer.StartActiveSpan("MakePizza");
         await Task.Delay(new Random().Next(1, 3) * 1000, cancellationToken);
         return product;
     }
@@ -59,6 +77,7 @@ public class PizzaBakeryService(ILogger<PizzaBakeryService> logger) : IPizzaBake
     private async Task<Product> PackPizza(Product product, CancellationToken cancellationToken = default)
     {
         logger.LogInformation("Pack pizza");
+        using var span = tracer.StartActiveSpan("PackPizza");
         await Task.Delay(new Random().Next(1, 2) * 1000, cancellationToken);
         return product;
     }
@@ -76,6 +95,8 @@ public class PizzaBakeryService(ILogger<PizzaBakeryService> logger) : IPizzaBake
 
     private void DropPizza(Product product)
     {
+        logger.LogWarning("Drop pizza");
+        using var span = tracer.StartActiveSpan("DropPizza");
         _bake.Remove(product.Id, out _);
     }
 }
