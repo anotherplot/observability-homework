@@ -12,7 +12,8 @@ public interface IPizzaBakeryService
     void SomeMethodWithTracing();
 }
 
-public class PizzaBakeryService(Tracer tracer, ILogger<PizzaBakeryService> logger) : IPizzaBakeryService
+public class PizzaBakeryService(Tracer tracer, ILogger<PizzaBakeryService> logger, PizzeriaMetrics metrics)
+    : IPizzaBakeryService
 {
     private readonly ConcurrentDictionary<Guid, Product> _bake = new();
 
@@ -22,8 +23,12 @@ public class PizzaBakeryService(Tracer tracer, ILogger<PizzaBakeryService> logge
         using var span = tracer.StartActiveSpan("DoPizza");
         try
         {
+            Stopwatch stopwatch = Stopwatch.StartNew();
             await MakePizza(product, cancellationToken);
             await BakePizza(product, cancellationToken);
+            stopwatch.Stop();
+            metrics.RecordProductCookingTime(product, stopwatch.ElapsedMilliseconds);
+
             await PackPizza(product, cancellationToken);
             return product;
         }
@@ -47,7 +52,6 @@ public class PizzaBakeryService(Tracer tracer, ILogger<PizzaBakeryService> logge
     {
         logger.LogInformation("SomeMethodWithTracing");
         using var span = tracer.StartActiveSpan("Some method with tracing");
-
     }
 
     private async Task<Product> BakePizza(Product product, CancellationToken cancellationToken = default)
@@ -59,6 +63,7 @@ public class PizzaBakeryService(Tracer tracer, ILogger<PizzaBakeryService> logge
         await Task.Delay(TimeSpan.FromSeconds(bakeForSeconds), cancellationToken);
         if (bakeForSeconds > 7)
         {
+            metrics.RecordBurntProduct(product);
             DropPizza(product);
             throw new BurntPizzaException("The pizza is burnt");
         }
@@ -85,6 +90,7 @@ public class PizzaBakeryService(Tracer tracer, ILogger<PizzaBakeryService> logge
     private void PushToBake(Product product)
     {
         _bake[product.Id] = product;
+        metrics.RecordProductsCountFromOven(_bake.Count);
     }
 
     private Product PopFromBake(Product product)
@@ -97,6 +103,8 @@ public class PizzaBakeryService(Tracer tracer, ILogger<PizzaBakeryService> logge
     {
         logger.LogWarning("Drop pizza");
         using var span = tracer.StartActiveSpan("DropPizza");
+        metrics.RecordOrderCancellation(product);
         _bake.Remove(product.Id, out _);
     }
+
 }

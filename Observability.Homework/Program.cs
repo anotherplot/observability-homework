@@ -33,37 +33,44 @@ using Observability.Homework.Services;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Observability.Homework.Middlewares;
+using OpenTelemetry.Metrics;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Logging.ClearProviders();
 
 var serviceName = "Observability.Tracing";
 
-builder.Services.AddOpenTelemetry().WithTracing(tcb =>
-{
-    tcb
-        .AddSource(serviceName)
-        .SetResourceBuilder(
-            ResourceBuilder.CreateDefault()
-                .AddService(serviceName: serviceName))
-        .AddAspNetCoreInstrumentation()
-        .AddJaegerExporter();
-});
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tcb =>
+    {
+        tcb
+            .AddSource(serviceName)
+            .SetResourceBuilder(
+                ResourceBuilder.CreateDefault()
+                    .AddService(serviceName: serviceName))
+            .AddAspNetCoreInstrumentation()
+            .AddJaegerExporter();
+    })
+    .WithMetrics(mpb => mpb
+        .AddPrometheusExporter()
+        .AddMeter(PizzeriaMetrics.MeterName));
 
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddSingleton(TracerProvider.Default.GetTracer(serviceName));
+builder.Services.AddSingleton<IPizzaBakeryService, PizzaBakeryService>();
+builder.Services.AddSingleton<PizzeriaMetrics>();
 
-builder.Services.AddTransient<IPizzaBakeryService, PizzaBakeryService>();
 builder.Services.AddOurCustomLogging(builder.Logging, builder.Environment);
 
 var app = builder.Build();
 
 app.UseMiddleware<RequestHeadersLoggingMiddleware>();
+app.MapPrometheusScrapingEndpoint();
 
 app.MapPost("/order",
     async ([FromBody] Order order, IPizzaBakeryService pizzaBakeryService, [FromServices] ILogger<Program> logger,
         [FromServices] Tracer tracer,
+        [FromServices] PizzeriaMetrics metrics,
         CancellationToken cancellationToken) =>
     {
         using var span = tracer.StartActiveSpan("Some method with tracing");
@@ -76,6 +83,7 @@ app.MapPost("/order",
             if (order.Product.Type is ProductType.Pizza)
                 await pizzaBakeryService.DoPizza(order.Product, cancellationToken);
 
+            metrics.ProductSoldByType(order.Product, clientId);
 
             return Results.Ok(order.Product);
         }
