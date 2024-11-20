@@ -46,7 +46,6 @@ builder.Services.AddOpenTelemetry().WithTracing(tcb =>
         .SetResourceBuilder(
             ResourceBuilder.CreateDefault()
                 .AddService(serviceName: serviceName))
-        .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(0.5)))
         .AddAspNetCoreInstrumentation()
         .AddJaegerExporter();
 });
