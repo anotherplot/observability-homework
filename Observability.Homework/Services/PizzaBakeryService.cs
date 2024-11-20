@@ -45,8 +45,8 @@ public class PizzaBakeryService(Tracer tracer, ILogger<PizzaBakeryService> logge
 
     public void SomeMethodWithTracing()
     {
+        logger.LogInformation("SomeMethodWithTracing");
         using var span = tracer.StartActiveSpan("Some method with tracing");
-        Console.WriteLine("TEST request");
 
     }
 

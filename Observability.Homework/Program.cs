@@ -32,6 +32,7 @@ using Observability.Homework.Models;
 using Observability.Homework.Services;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using Observability.Homework.Middlewares;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
@@ -58,6 +59,8 @@ builder.Services.AddTransient<IPizzaBakeryService, PizzaBakeryService>();
 builder.Services.AddOurCustomLogging(builder.Logging, builder.Environment);
 
 var app = builder.Build();
+
+app.UseMiddleware<RequestHeadersLoggingMiddleware>();
 
 app.MapPost("/order",
     async ([FromBody] Order order, IPizzaBakeryService pizzaBakeryService, [FromServices] ILogger<Program> logger,
